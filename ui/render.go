@@ -18,7 +18,7 @@ func RenderPuzzle(puzzle [9][9]int) {
 			} else {
 				text = fmt.Sprintf(" %d ", col)
 			}
-			color := tcell.ColorWhite
+			color := tcell.ColorRed
 			table.SetCell(r, c, tview.NewTableCell(text).SetTextColor(color).SetAlign(tview.AlignCenter))
 		}
 	}
@@ -31,7 +31,7 @@ func RenderPuzzle(puzzle [9][9]int) {
 			table.SetSelectable(true, true)
 		}
 	}).SetSelectedFunc(func(row int, column int) {
-		table.GetCell(row, column).SetTextColor(tcell.ColorRed)
+		table.GetCell(row, column).SetTextColor(tcell.ColorWhite)
 		table.SetSelectable(true, true)
 	})
 
