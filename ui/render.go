@@ -14,14 +14,26 @@ func RenderPuzzle(puzzle [9][9]int) {
 		for c, col := range row {
 			var text string
 			if col == 0 {
-				text = " " // Empty cell
+				text = "   " // Empty cell
 			} else {
-				text = fmt.Sprintf("%d", col)
+				text = fmt.Sprintf(" %d ", col)
 			}
 			color := tcell.ColorWhite
 			table.SetCell(r, c, tview.NewTableCell(text).SetTextColor(color).SetAlign(tview.AlignCenter))
 		}
 	}
+	table.Select(0, 0).SetDoneFunc(func(key tcell.Key) {
+		if key == tcell.KeyEscape {
+			app.Stop()
+
+		}
+		if key == tcell.KeyEnter {
+			table.SetSelectable(true, true)
+		}
+	}).SetSelectedFunc(func(row int, column int) {
+		table.GetCell(row, column).SetTextColor(tcell.ColorRed)
+		table.SetSelectable(true, true)
+	})
 
 	// Run the application
 	if err := app.SetRoot(table, true).SetFocus(table).Run(); err != nil {
