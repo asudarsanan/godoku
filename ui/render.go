@@ -31,7 +31,12 @@ func (ui *UI) Run() error {
 	if err != nil {
 		log.Fatalf("Failed to open log file: %s", err)
 	}
-	defer logFile.Close()
+	defer func(logFile *os.File) {
+		err := logFile.Close()
+		if err != nil {
+
+		}
+	}(logFile)
 	log.SetOutput(logFile)
 
 	ui.initGrid()
@@ -48,14 +53,19 @@ func (ui *UI) initGrid() {
 				text = fmt.Sprintf(" %d ", col)
 			}
 
-			color := tcell.ColorWhite
+			color := tcell.ColorYellowGreen
 			immutable := col != 0
 			if immutable {
-				color = tcell.ColorGray
+				color = tcell.ColorBlack
+			}
+			bgColor := tcell.ColorSilver
+			if (r == 3 || r == 4 || r == 5) || (c == 3 || c == 4 || c == 5) {
+				bgColor = tcell.ColorGray
+
 			}
 
 			ui.table.SetCell(r, c, tview.NewTableCell(text).
-				SetTextColor(color).
+				SetTextColor(color).SetBackgroundColor(bgColor).
 				SetAlign(tview.AlignCenter).
 				SetSelectable(!immutable || ui.userEdited[r][c]))
 		}
@@ -84,16 +94,16 @@ func (ui *UI) initGrid() {
 			r := event.Rune()
 			if r >= '1' && r <= '9' {
 				newText := string(r)
-				cell.SetText(fmt.Sprintf(" %s ", newText)).SetTextColor(tcell.ColorRed)
+				cell.SetText(fmt.Sprintf(" %s ", newText)).SetTextColor(tcell.Color20)
 				ui.updateGrid(row, col, newText)
 				log.Printf("Updated cell (%d, %d) with new value: %s", row, col, newText)
 			} else if r == '0' {
-				cell.SetText("   ").SetTextColor(tcell.ColorWhite)
+				cell.SetText("   ").SetTextColor(tcell.Color20)
 				ui.updateGrid(row, col, "")
 				log.Printf("Cleared cell (%d, %d)", row, col)
 			}
 		case tcell.KeyBackspace, tcell.KeyDelete:
-			cell.SetText("   ").SetTextColor(tcell.ColorWhite)
+			cell.SetText("   ").SetTextColor(tcell.Color20)
 			ui.updateGrid(row, col, "")
 			log.Printf("Cleared cell (%d, %d)", row, col)
 		}
