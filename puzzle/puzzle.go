@@ -6,7 +6,7 @@ import (
 	"os"
 )
 
-func LoadFromJSON(filename string) ([9][9]int, error) {
+func ImportPuzzle(filename string) ([9][9]int, error) {
 	var grid [9][9]int
 
 	// Open the file

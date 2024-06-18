@@ -6,11 +6,28 @@ import (
 	"github.com/rivo/tview"
 )
 
-func RenderPuzzle(puzzle [9][9]int) {
-	app := tview.NewApplication()
-	table := tview.NewTable().SetBorders(true)
+type UI struct {
+	app   *tview.Application
+	table *tview.Table
+	game  [9][9]int
+}
 
-	for r, row := range puzzle {
+func NewUI(game [9][9]int) *UI {
+	return &UI{
+		app:   tview.NewApplication(),
+		table: tview.NewTable().SetBorders(true),
+		game:  game,
+	}
+}
+
+func (ui *UI) Run() error {
+	ui.initGrid()
+	//fmt.Sprintf("this is before return")
+	return ui.app.SetRoot(ui.table, true).Run()
+}
+
+func (ui *UI) initGrid() {
+	for r, row := range ui.game {
 		for c, col := range row {
 			var text string
 			if col == 0 {
@@ -19,24 +36,27 @@ func RenderPuzzle(puzzle [9][9]int) {
 				text = fmt.Sprintf(" %d ", col)
 			}
 			color := tcell.ColorRed
-			table.SetCell(r, c, tview.NewTableCell(text).SetTextColor(color).SetAlign(tview.AlignCenter))
+			ui.table.SetCell(r, c, tview.NewTableCell(text).SetTextColor(color).SetAlign(tview.AlignCenter))
 		}
 	}
-	table.Select(0, 0).SetDoneFunc(func(key tcell.Key) {
+	ui.table.Select(0, 0).SetDoneFunc(func(key tcell.Key) {
 		if key == tcell.KeyEscape {
-			app.Stop()
+			ui.app.Stop()
 
 		}
 		if key == tcell.KeyEnter {
-			table.SetSelectable(true, true)
+			ui.table.SetSelectable(true, true)
 		}
 	}).SetSelectedFunc(func(row int, column int) {
-		table.GetCell(row, column).SetTextColor(tcell.ColorWhite)
-		table.SetSelectable(true, true)
+		ui.table.GetCell(row, column).SetTextColor(tcell.ColorWhite)
+		ui.table.SetSelectable(true, true)
 	})
+}
 
-	// Run the application
-	if err := app.SetRoot(table, true).SetFocus(table).Run(); err != nil {
-		panic(err)
+func (ui *UI) updateGrid(row int, col int, text string) {
+	if len(text) == 0 {
+		ui.game[row][col] = 0
+	} else {
+		ui.game[row][col] = int(text[0] - '0')
 	}
 }
