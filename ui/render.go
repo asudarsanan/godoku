@@ -1,32 +1,48 @@
 package ui
 
 import (
+	"encoding/json"
 	"fmt"
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 	"log"
 	"os"
+	"path/filepath"
 	"strconv"
+	"time"
 )
 
 type UI struct {
 	app           *tview.Application
 	table         *tview.Table
 	game          [9][9]int
+	originalGame  [9][9]int
 	userEdited    [9][9]bool
 	mainContainer *tview.Flex
 	controlBar    *tview.Flex
 	resetButton   *tview.Button
 	saveButton    *tview.Button
+	loadButton    *tview.Button
 	exitButton    *tview.Button
+	statusText    *tview.TextView
 }
 
 func NewUI(game [9][9]int) *UI {
+	// Create a copy of the original puzzle
+	var originalGame [9][9]int
+	for r := 0; r < 9; r++ {
+		for c := 0; c < 9; c++ {
+			originalGame[r][c] = game[r][c]
+		}
+	}
+	
 	ui := &UI{
-		app:        tview.NewApplication(),
-		table:      tview.NewTable().SetBorders(true),
-		game:       game,
-		userEdited: [9][9]bool{},
+		app:          tview.NewApplication(),
+		table:        tview.NewTable().SetBorders(true),
+		game:         game,
+		originalGame: originalGame,
+		userEdited:   [9][9]bool{},
+		statusText:   tview.NewTextView().SetText("").SetTextAlign(tview.AlignCenter),
 	}
 	
 	// Create control buttons
@@ -40,6 +56,11 @@ func NewUI(game [9][9]int) *UI {
 			ui.savePuzzle()
 		})
 	
+	ui.loadButton = tview.NewButton("Load").
+		SetSelectedFunc(func() {
+			ui.loadPuzzle()
+		})
+	
 	ui.exitButton = tview.NewButton("Exit").
 		SetSelectedFunc(func() {
 			ui.app.Stop()
@@ -48,11 +69,13 @@ func NewUI(game [9][9]int) *UI {
 	// Create control bar
 	ui.controlBar = tview.NewFlex().
 		AddItem(nil, 0, 1, false).
-		AddItem(ui.resetButton, 10, 0, true).
+		AddItem(ui.resetButton, 8, 0, true).
 		AddItem(nil, 1, 0, false).
-		AddItem(ui.saveButton, 10, 0, true).
+		AddItem(ui.saveButton, 8, 0, true).
 		AddItem(nil, 1, 0, false).
-		AddItem(ui.exitButton, 10, 0, true).
+		AddItem(ui.loadButton, 8, 0, true).
+		AddItem(nil, 1, 0, false).
+		AddItem(ui.exitButton, 8, 0, true).
 		AddItem(nil, 0, 1, false)
 	
 	// Create main container with puzzle grid and control bar
@@ -65,6 +88,8 @@ func NewUI(game [9][9]int) *UI {
 				AddItem(ui.table, 37, 0, true). // Width of puzzle grid
 				AddItem(nil, 0, 1, false),
 			19, 0, true). // Height of puzzle grid
+		AddItem(nil, 1, 0, false).
+		AddItem(ui.statusText, 1, 0, false).
 		AddItem(nil, 1, 0, false).
 		AddItem(ui.controlBar, 1, 0, true).
 		AddItem(nil, 0, 1, false)
@@ -178,6 +203,7 @@ func (ui *UI) initGrid() {
 				return nil
 			} else if ui.app.GetFocus() == ui.resetButton || 
 				ui.app.GetFocus() == ui.saveButton || 
+				ui.app.GetFocus() == ui.loadButton || 
 				ui.app.GetFocus() == ui.exitButton {
 				ui.app.SetFocus(ui.table)
 				return nil
@@ -200,6 +226,17 @@ func (ui *UI) initGrid() {
 			ui.app.SetFocus(ui.resetButton)
 			return nil
 		} else if event.Key() == tcell.KeyRight {
+			ui.app.SetFocus(ui.loadButton)
+			return nil
+		}
+		return event
+	})
+	
+	ui.loadButton.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+		if event.Key() == tcell.KeyLeft {
+			ui.app.SetFocus(ui.saveButton)
+			return nil
+		} else if event.Key() == tcell.KeyRight {
 			ui.app.SetFocus(ui.exitButton)
 			return nil
 		}
@@ -208,7 +245,7 @@ func (ui *UI) initGrid() {
 
 	ui.exitButton.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
 		if event.Key() == tcell.KeyLeft {
-			ui.app.SetFocus(ui.saveButton)
+			ui.app.SetFocus(ui.loadButton)
 			return nil
 		}
 		return event
@@ -232,30 +269,257 @@ func (ui *UI) updateGrid(row int, col int, text string) {
 
 // resetPuzzle resets the puzzle to its original state by clearing all user inputs
 func (ui *UI) resetPuzzle() {
-	// Clear all user inputs
-	ui.userEdited = [9][9]bool{}
-	
-	// Refresh all cells to their original state
-	for r := 0; r < 9; r++ {
-		for c := 0; c < 9; c++ {
-			cell := ui.table.GetCell(r, c)
-			if ui.game[r][c] == 0 {
-				cell.SetText("   ").SetTextColor(tcell.ColorYellowGreen)
-			} else {
-				cell.SetText(fmt.Sprintf(" %d ", ui.game[r][c])).
-					SetTextColor(tcell.ColorAqua).
-					SetSelectable(false)
+	// Create a modal for confirmation
+	modal := tview.NewModal().
+		SetText("Are you sure you want to reset the puzzle? All progress will be lost.").
+		AddButtons([]string{"Reset", "Cancel"}).
+		SetDoneFunc(func(buttonIndex int, buttonLabel string) {
+			if buttonLabel == "Reset" {
+				// Clear all user inputs
+				ui.userEdited = [9][9]bool{}
+				
+				// Reset game state to original
+				for r := 0; r < 9; r++ {
+					for c := 0; c < 9; c++ {
+						ui.game[r][c] = ui.originalGame[r][c]
+						
+						// Update cell display
+						cell := ui.table.GetCell(r, c)
+						if ui.game[r][c] == 0 {
+							cell.SetText("   ").SetTextColor(tcell.ColorYellowGreen)
+						} else {
+							cell.SetText(fmt.Sprintf(" %d ", ui.game[r][c])).
+								SetTextColor(tcell.ColorAqua).
+								SetSelectable(false)
+						}
+					}
+				}
+				
+				log.Printf("Puzzle has been reset to its original state")
+				ui.showStatus("Puzzle reset successfully")
 			}
+			
+			// Return to the main UI
+			ui.app.SetRoot(ui.mainContainer, true)
+			ui.app.SetFocus(ui.table)
+		})
+	
+	// Show the modal
+	ui.app.SetRoot(modal, true)
+}
+
+// savePuzzle saves the current puzzle state to a file
+func (ui *UI) savePuzzle() {
+	// Create saves directory if it doesn't exist
+	savesDir := "saves"
+	if _, err := os.Stat(savesDir); os.IsNotExist(err) {
+		err := os.Mkdir(savesDir, 0755)
+		if err != nil {
+			log.Printf("Error creating saves directory: %v", err)
+			ui.showStatus("Error: Could not create saves directory")
+			return
 		}
 	}
 	
-	log.Printf("Puzzle has been reset to its original state")
+	// Generate filename with timestamp
+	timestamp := time.Now()
+	filename := filepath.Join(savesDir, fmt.Sprintf("sudoku_save_%s.json", 
+		timestamp.Format("2006-01-02_15-04-05")))
+	
+	// Create game state
+	gameState := GameState{
+		OriginalPuzzle: ui.originalGame,
+		CurrentState:   ui.game,
+		UserEdited:     ui.userEdited,
+		Timestamp:      timestamp,
+	}
+	
+	// Marshal to JSON
+	jsonData, err := json.MarshalIndent(gameState, "", "  ")
+	if err != nil {
+		log.Printf("Error marshalling game state: %v", err)
+		ui.showStatus("Error: Could not save game")
+		return
+	}
+	
+	// Write to file
+	err = os.WriteFile(filename, jsonData, 0644)
+	if err != nil {
+		log.Printf("Error writing save file: %v", err)
+		ui.showStatus("Error: Could not write save file")
+		return
+	}
+	
+	log.Printf("Game saved to %s", filename)
+	ui.showStatus(fmt.Sprintf("Game saved to %s", filename))
 	ui.app.SetFocus(ui.table)
 }
 
-// savePuzzle saves the current puzzle state (placeholder for future implementation)
-func (ui *UI) savePuzzle() {
-	// Here we would implement actual saving logic in future iterations
-	log.Printf("Puzzle state saved (placeholder)")
+// loadPuzzle loads a saved puzzle from a file
+func (ui *UI) loadPuzzle() {
+	// Check if saves directory exists
+	savesDir := "saves"
+	if _, err := os.Stat(savesDir); os.IsNotExist(err) {
+		ui.showStatus("No saved games found")
+		return
+	}
+	
+	// Read saved game files
+	files, err := os.ReadDir(savesDir)
+	if err != nil {
+		log.Printf("Error reading saves directory: %v", err)
+		ui.showStatus("Error reading saved games")
+		return
+	}
+	
+	// Filter for json files
+	var saveFiles []string
+	for _, file := range files {
+		if !file.IsDir() && filepath.Ext(file.Name()) == ".json" {
+			saveFiles = append(saveFiles, file.Name())
+		}
+	}
+	
+	if len(saveFiles) == 0 {
+		ui.showStatus("No saved games found")
+		return
+	}
+	
+	// Create list to select save file
+	list := tview.NewList()
+	list.SetTitle("Select a saved game").
+		SetTitleAlign(tview.AlignCenter).
+		SetBorder(true)
+	
+	for i, file := range saveFiles {
+		// Display file without extension
+		displayName := file
+		if len(displayName) > 40 {
+			displayName = displayName[:37] + "..."
+		}
+		
+		// Local copy of i for the closure
+		index := i
+		list.AddItem(displayName, filepath.Join(savesDir, file), 0, func() {
+			ui.loadGameFromFile(filepath.Join(savesDir, saveFiles[index]))
+		})
+	}
+	
+	// Add cancel option
+	list.AddItem("Cancel", "", 0, func() {
+		ui.app.SetRoot(ui.mainContainer, true)
+		ui.app.SetFocus(ui.table)
+	})
+	
+	// Show the list in a flex container to center it
+	flex := tview.NewFlex().
+		AddItem(nil, 0, 1, false).
+		AddItem(
+			tview.NewFlex().
+				SetDirection(tview.FlexRow).
+				AddItem(nil, 0, 1, false).
+				AddItem(list, 15, 1, true).
+				AddItem(nil, 0, 1, false),
+			50, 1, true).
+		AddItem(nil, 0, 1, false)
+	
+	ui.app.SetRoot(flex, true)
+}
+
+// loadGameFromFile loads a game from the specified file
+func (ui *UI) loadGameFromFile(filePath string) {
+	// Read file content
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		log.Printf("Error reading save file: %v", err)
+		ui.showStatus("Error reading save file")
+		ui.app.SetRoot(ui.mainContainer, true)
+		ui.app.SetFocus(ui.table)
+		return
+	}
+	
+	// Unmarshal JSON
+	var gameState GameState
+	err = json.Unmarshal(data, &gameState)
+	if err != nil {
+		log.Printf("Error parsing save file: %v", err)
+		ui.showStatus("Error parsing save file")
+		ui.app.SetRoot(ui.mainContainer, true)
+		ui.app.SetFocus(ui.table)
+		return
+	}
+	
+	// Update game state
+	ui.originalGame = gameState.OriginalPuzzle
+	ui.game = gameState.CurrentState
+	ui.userEdited = gameState.UserEdited
+	
+	// Refresh grid
+	ui.refreshGrid()
+	
+	ui.app.SetRoot(ui.mainContainer, true)
 	ui.app.SetFocus(ui.table)
+	
+	ui.showStatus("Game loaded successfully")
+	log.Printf("Game loaded from %s", filePath)
+}
+
+// refreshGrid updates the UI grid based on the current game state
+func (ui *UI) refreshGrid() {
+	for r := 0; r < 9; r++ {
+		for c := 0; c < 9; c++ {
+			cell := ui.table.GetCell(r, c)
+			
+			// Set cell content
+			if ui.game[r][c] == 0 {
+				cell.SetText("   ")
+			} else {
+				cell.SetText(fmt.Sprintf(" %d ", ui.game[r][c]))
+			}
+			
+			// Set colors based on whether cell is original or user-edited
+			origValue := ui.originalGame[r][c]
+			if origValue != 0 && ui.game[r][c] == origValue {
+				// Original cell
+				cell.SetTextColor(tcell.ColorAqua)
+				cell.SetSelectable(false)
+			} else if ui.userEdited[r][c] {
+				// User edited cell
+				cell.SetTextColor(tcell.ColorRed)
+				cell.SetSelectable(true)
+			} else {
+				// Empty editable cell
+				cell.SetTextColor(tcell.ColorYellowGreen)
+				cell.SetSelectable(true)
+			}
+			
+			// Set background color based on position
+			bgColor := tcell.ColorSilver
+			if (r == 3 || r == 4 || r == 5) || (c == 3 || c == 4 || c == 5) {
+				bgColor = tcell.ColorGray
+			}
+			cell.SetBackgroundColor(bgColor)
+		}
+	}
+}
+
+// showStatus displays a status message and clears it after a delay
+func (ui *UI) showStatus(message string) {
+	ui.statusText.SetText(message).SetTextColor(tcell.ColorYellow)
+	
+	// Schedule clearing the message after 3 seconds
+	go func() {
+		time.Sleep(3 * time.Second)
+		ui.app.QueueUpdateDraw(func() {
+			ui.statusText.SetText("")
+		})
+	}()
+}
+
+// GameState represents the state of a Sudoku game
+type GameState struct {
+	OriginalPuzzle [9][9]int   `json:"originalPuzzle"`
+	CurrentState   [9][9]int   `json:"currentState"`
+	UserEdited     [9][9]bool  `json:"userEdited"`
+	Timestamp      time.Time   `json:"timestamp"`
 }
