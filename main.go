@@ -1,8 +1,8 @@
 package main
 
 import (
-	"goduko/puzzle"
-	"goduko/ui"
+	"godoku/puzzle"
+	"godoku/ui"
 	"log"
 )
 

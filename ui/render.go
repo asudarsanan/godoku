@@ -34,7 +34,6 @@ func (ui *UI) Run() error {
 	defer func(logFile *os.File) {
 		err := logFile.Close()
 		if err != nil {
-
 		}
 	}(logFile)
 	log.SetOutput(logFile)
@@ -56,7 +55,7 @@ func (ui *UI) initGrid() {
 			color := tcell.ColorYellowGreen
 			immutable := col != 0
 			if immutable {
-				color = tcell.ColorBlack
+				color = tcell.ColorAqua
 			}
 			bgColor := tcell.ColorSilver
 			if (r == 3 || r == 4 || r == 5) || (c == 3 || c == 4 || c == 5) {
@@ -82,6 +81,13 @@ func (ui *UI) initGrid() {
 
 	ui.table.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
 		row, col := ui.table.GetSelection()
+		
+		// Check if row and col are valid indices
+		if row < 0 || row >= 9 || col < 0 || col >= 9 {
+			log.Printf("Invalid cell selection (%d, %d)", row, col)
+			return event
+		}
+		
 		cell := ui.table.GetCell(row, col)
 
 		if !ui.userEdited[row][col] && ui.game[row][col] != 0 {
@@ -94,7 +100,7 @@ func (ui *UI) initGrid() {
 			r := event.Rune()
 			if r >= '1' && r <= '9' {
 				newText := string(r)
-				cell.SetText(fmt.Sprintf(" %s ", newText)).SetTextColor(tcell.Color20)
+				cell.SetText(fmt.Sprintf(" %s ", newText)).SetTextColor(tcell.ColorRed)
 				ui.updateGrid(row, col, newText)
 				log.Printf("Updated cell (%d, %d) with new value: %s", row, col, newText)
 			} else if r == '0' {
