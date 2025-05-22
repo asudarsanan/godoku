@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
+	"godoku/config"
 	"log"
 	"os"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 	"time"
 )
 
+// UI represents the game interface
 type UI struct {
 	app           *tview.Application
 	table         *tview.Table
@@ -27,6 +29,15 @@ type UI struct {
 	statusText    *tview.TextView
 }
 
+// GameState represents the state of a Sudoku game
+type GameState struct {
+	OriginalPuzzle [9][9]int   `json:"originalPuzzle"`
+	CurrentState   [9][9]int   `json:"currentState"`
+	UserEdited     [9][9]bool  `json:"userEdited"`
+	Timestamp      time.Time   `json:"timestamp"`
+}
+
+// NewUI creates a new game UI instance
 func NewUI(game [9][9]int) *UI {
 	// Create a copy of the original puzzle
 	var originalGame [9][9]int
@@ -97,6 +108,7 @@ func NewUI(game [9][9]int) *UI {
 	return ui
 }
 
+// Run starts the game UI
 func (ui *UI) Run() error {
 	// Set up logging
 	logFile, err := os.OpenFile("app.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
@@ -114,6 +126,7 @@ func (ui *UI) Run() error {
 	return ui.app.SetRoot(ui.mainContainer, true).EnableMouse(true).Run()
 }
 
+// initGrid initializes the Sudoku grid
 func (ui *UI) initGrid() {
 	for r, row := range ui.game {
 		for c, col := range row {
@@ -255,6 +268,7 @@ func (ui *UI) initGrid() {
 	ui.table.SetSelectable(true, true)
 }
 
+// updateGrid updates the grid data with the new value
 func (ui *UI) updateGrid(row int, col int, text string) {
 	if len(text) == 0 {
 		ui.game[row][col] = 0
@@ -311,9 +325,9 @@ func (ui *UI) resetPuzzle() {
 // savePuzzle saves the current puzzle state to a file
 func (ui *UI) savePuzzle() {
 	// Create saves directory if it doesn't exist
-	savesDir := "saves"
+	savesDir := config.SavesDir
 	if _, err := os.Stat(savesDir); os.IsNotExist(err) {
-		err := os.Mkdir(savesDir, 0755)
+		err := os.MkdirAll(savesDir, 0755)
 		if err != nil {
 			log.Printf("Error creating saves directory: %v", err)
 			ui.showStatus("Error: Could not create saves directory")
@@ -351,14 +365,14 @@ func (ui *UI) savePuzzle() {
 	}
 	
 	log.Printf("Game saved to %s", filename)
-	ui.showStatus(fmt.Sprintf("Game saved to %s", filename))
+	ui.showStatus(fmt.Sprintf("Game saved to %s", filepath.Base(filename)))
 	ui.app.SetFocus(ui.table)
 }
 
 // loadPuzzle loads a saved puzzle from a file
 func (ui *UI) loadPuzzle() {
 	// Check if saves directory exists
-	savesDir := "saves"
+	savesDir := config.SavesDir
 	if _, err := os.Stat(savesDir); os.IsNotExist(err) {
 		ui.showStatus("No saved games found")
 		return
@@ -514,12 +528,4 @@ func (ui *UI) showStatus(message string) {
 			ui.statusText.SetText("")
 		})
 	}()
-}
-
-// GameState represents the state of a Sudoku game
-type GameState struct {
-	OriginalPuzzle [9][9]int   `json:"originalPuzzle"`
-	CurrentState   [9][9]int   `json:"currentState"`
-	UserEdited     [9][9]bool  `json:"userEdited"`
-	Timestamp      time.Time   `json:"timestamp"`
 }
