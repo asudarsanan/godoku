@@ -38,12 +38,12 @@ func NewBuilder() *Builder {
 	}
 
 	// Create control buttons
-	builder.clearButton = tview.NewButton("Clear All").
+	builder.clearButton = tview.NewButton("Reset").
 		SetSelectedFunc(func() {
 			builder.clearPuzzle()
 		})
 
-	builder.saveButton = tview.NewButton("Save Puzzle").
+	builder.saveButton = tview.NewButton("Save").
 		SetSelectedFunc(func() {
 			builder.savePuzzle()
 		})

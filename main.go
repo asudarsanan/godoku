@@ -3,114 +3,134 @@ package main
 import (
 	"flag"
 	"fmt"
-	"godoku/builder"
 	"godoku/config"
+	"godoku/logger"
 	"godoku/puzzle"
 	"godoku/ui"
-	"log"
 	"os"
-	"path/filepath"
 )
 
 func main() {
-	// Set up logging
-	logFile, err := os.OpenFile("app.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
-	if err != nil {
-		fmt.Printf("Failed to open log file: %s\n", err)
-		return
-	}
-	defer logFile.Close()
-	log.SetOutput(logFile)
-
 	// Parse command line flags
 	initFlag := flag.Bool("init", false, "Initialize configuration directories")
 	builderFlag := flag.Bool("builder", false, "Launch the puzzle builder")
 	flag.Parse()
 
+	// Initialize configuration
+	config.Init()
+	
 	// Initialize configuration if requested or on first run
-	if *initFlag {
-		fmt.Println("Initializing configuration directories...")
+	if *initFlag || !isConfigInitialized() {
+		if *initFlag {
+			fmt.Println("Initializing configuration directories...")
+		} else {
+			fmt.Println("First run detected, initializing configuration...")
+		}
+		
 		if err := config.InitConfig(); err != nil {
 			fmt.Printf("Error initializing configuration: %v\n", err)
-			log.Fatalf("Error initializing configuration: %v", err)
-			return
+			os.Exit(1)
 		}
+		
 		fmt.Println("Configuration initialized successfully!")
 		fmt.Printf("Puzzles directory: %s\n", config.PuzzlesDir)
 		fmt.Printf("Saves directory: %s\n", config.SavesDir)
+		fmt.Printf("Logs directory: %s\n", config.LogDir)
 		
 		// Exit if only initialization was requested
-		if len(os.Args) == 2 && os.Args[1] == "--init" {
+		if *initFlag && len(os.Args) == 2 {
 			return
 		}
 	}
 
-	// Ensure config is initialized even if --init flag wasn't provided
-	if _, err := os.Stat(config.ConfigDir); os.IsNotExist(err) {
-		fmt.Println("First run detected, initializing configuration...")
-		if err := config.InitConfig(); err != nil {
-			fmt.Printf("Error initializing configuration: %v\n", err)
-			log.Fatalf("Error initializing configuration: %v", err)
-			return
-		}
+	// Initialize logger
+	if err := logger.InitLogger(); err != nil {
+		fmt.Printf("Failed to initialize logger: %s\n", err)
 	}
-
+	defer logger.Close()
+	
+	logger.Info("Application started")
 	// Launch the builder if requested
 	if *builderFlag {
+		logger.Info("Launching puzzle builder")
 		fmt.Println("Launching puzzle builder...")
-		puzzleBuilder := builder.NewBuilder()
+		
+		// Create and run builder UI
+		puzzleBuilder := ui.NewBuilder()
 		if err := puzzleBuilder.Run(); err != nil {
-			log.Fatalf("Error running puzzle builder: %v", err)
+			logger.Error("Error running puzzle builder: %v", err)
+			fmt.Printf("Error running puzzle builder: %v\n", err)
 		}
 		return
 	}
 
 	// Launch the game UI
+	logger.Info("Loading game")
 	fmt.Println("Loading game...")
 	
-	// Get list of available puzzles
-	puzzlesDir := config.PuzzlesDir
-	puzzleFile := "puzzles.json"  // Default puzzle
-	
-	// Check if puzzles directory exists and has puzzle files
-	if _, err := os.Stat(puzzlesDir); !os.IsNotExist(err) {
-		puzzleFiles, err := os.ReadDir(puzzlesDir)
-		if err == nil && len(puzzleFiles) > 0 {
-			// If we have puzzle files, prompt the user to select one
-			if len(puzzleFiles) > 1 {
-				fmt.Println("Available puzzles:")
-				for i, file := range puzzleFiles {
-					if filepath.Ext(file.Name()) == ".json" {
-						fmt.Printf("%d. %s\n", i+1, file.Name())
-					}
-				}
-				
-				fmt.Print("Select a puzzle (enter number or press Enter for default): ")
-				var choice string
-				fmt.Scanln(&choice)
-				
-				if choice != "" {
-					var index int
-					if _, err := fmt.Sscanf(choice, "%d", &index); err == nil && index > 0 && index <= len(puzzleFiles) {
-						puzzleFile = puzzleFiles[index-1].Name()
-					}
-				}
-			} else if filepath.Ext(puzzleFiles[0].Name()) == ".json" {
-				// If only one puzzle file exists, use it
-				puzzleFile = puzzleFiles[0].Name()
-			}
+	// Try to load the most recent save game first
+	gameState, success := puzzle.LoadLastGame()
+	if success {
+		fmt.Println("Found unfinished game, loading it...")
+		// Create UI with loaded game state
+		loadedGame := ui.NewUI(gameState.OriginalPuzzle)
+		
+		// Update with saved state
+		loadedGame.SetGameState(gameState.CurrentState, gameState.UserEdited)
+		loadedGame.ShowStatus("Last saved game loaded automatically")
+		
+		if err := loadedGame.Run(); err != nil {
+			logger.Error("Error running UI for loaded game: %v", err)
+			fmt.Printf("Error running UI for loaded game: %v\n", err)
 		}
-	}
-	
-	grid, err := puzzle.ImportPuzzle(puzzleFile)
-	if err != nil {
-		fmt.Printf("Error loading puzzle: %v\n", err)
-		log.Fatalf("Error loading puzzle: %v", err)
 		return
 	}
 	
+	// If no save game or failed to load, proceed with puzzle selection
+	fmt.Println("No unfinished game found, selecting new puzzle...")
+	
+	// Show puzzle selector UI
+	var grid [9][9]int
+	selected := ui.ShowPuzzleSelector(func(puzzlePath string) bool {
+		var err error
+		grid, err = puzzle.ImportPuzzle(puzzlePath)
+		if err != nil {
+			logger.Error("Error loading puzzle: %v", err)
+			fmt.Printf("Error loading puzzle: %v\n", err)
+			return false
+		}
+		return true
+	})
+	
+	if !selected {
+		logger.Info("Puzzle selection canceled")
+		fmt.Println("Puzzle selection canceled")
+		return
+	}
+	
+	// Create and run game UI
 	newGame := ui.NewUI(grid)
 	if err := newGame.Run(); err != nil {
-		log.Fatalf("Error running UI: %v", err)
+		logger.Error("Error running UI: %v", err)
+		fmt.Printf("Error running UI: %v\n", err)
 	}
 }
+
+// isConfigInitialized checks if the configuration directories exist
+func isConfigInitialized() bool {
+	// Check if config directory exists
+	if _, err := os.Stat(config.ConfigDir); os.IsNotExist(err) {
+		return false
+	}
+	// Check if puzzles directory exists
+	if _, err := os.Stat(config.PuzzlesDir); os.IsNotExist(err) {
+		return false
+	}
+	// Check if saves directory exists
+	if _, err := os.Stat(config.SavesDir); os.IsNotExist(err) {
+		return false
+	}
+	return true
+}
+
+// This function is now replaced by the ShowPuzzleSelector function in ui/puzzle_selector.go

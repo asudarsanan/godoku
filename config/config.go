@@ -3,6 +3,8 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"runtime"
+	"time"
 )
 
 // Directories and paths
@@ -15,13 +17,26 @@ var (
 
 	// SavesDir is where saved games are stored
 	SavesDir string
+
+	// LogDir is where log files are stored
+	LogDir string
+
+	// CurrentLogFile is the path to the current log file
+	CurrentLogFile string
 )
 
-func init() {
+// Init initializes config paths without creating directories
+func Init() {
 	// Initialize directory paths
 	homeDir, err := os.UserHomeDir()
 	if err == nil {
-		ConfigDir = filepath.Join(homeDir, ".config", "godoku")
+		if runtime.GOOS == "windows" {
+			ConfigDir = filepath.Join(homeDir, "AppData", "Local", "godoku")
+		} else {
+			// For Linux, macOS, and other Unix-like systems
+			ConfigDir = filepath.Join(homeDir, ".config", "godoku")
+		}
+		
 		PuzzlesDir = filepath.Join(ConfigDir, "puzzles")
 		SavesDir = filepath.Join(ConfigDir, "saves")
 	} else {
@@ -30,20 +45,15 @@ func init() {
 		PuzzlesDir = filepath.Join(ConfigDir, "puzzles")
 		SavesDir = filepath.Join(ConfigDir, "saves")
 	}
+
+	// Set up log directory
+	initLogDirectory()
 }
 
 // InitConfig initializes the configuration directories
 func InitConfig() error {
-	// Get user's home directory
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return err
-	}
-
-	// Set up config paths
-	ConfigDir = filepath.Join(homeDir, ".config", "godoku")
-	PuzzlesDir = filepath.Join(ConfigDir, "puzzles")
-	SavesDir = filepath.Join(ConfigDir, "saves")
+	// Initialize paths
+	Init()
 
 	// Create directories if they don't exist
 	dirs := []string{ConfigDir, PuzzlesDir, SavesDir}
@@ -53,13 +63,13 @@ func InitConfig() error {
 		}
 	}
 
-	// Copy default puzzles if they don't exist in the new location
-	err = copyDefaultPuzzles()
-	if err != nil {
+	// Initialize log directory
+	if err := InitLogDirectory(); err != nil {
 		return err
 	}
 
-	return nil
+	// Copy default puzzles if they don't exist in the new location
+	return copyDefaultPuzzles()
 }
 
 // copyDefaultPuzzles copies the default puzzles from the resources directory to the config directory
@@ -71,35 +81,62 @@ func copyDefaultPuzzles() error {
 		return nil
 	}
 
-	// Get executable directory
-	execDir, err := filepath.Abs(filepath.Dir(os.Args[0]))
-	if err != nil {
-		return err
+	// Possible source locations for puzzle file
+	sourcePaths := []string{
+		filepath.Join("resources", "puzzles.json"),
 	}
 
-	// Source puzzles file
-	sourcePath := filepath.Join(execDir, "resources", "puzzles.json")
-	
-	// If source doesn't exist in the expected location, try current directory
-	if _, err := os.Stat(sourcePath); os.IsNotExist(err) {
-		sourcePath = filepath.Join("resources", "puzzles.json")
+	// Try to find executable directory
+	if execDir, err := filepath.Abs(filepath.Dir(os.Args[0])); err == nil {
+		sourcePaths = append(sourcePaths, filepath.Join(execDir, "resources", "puzzles.json"))
 	}
 
-	// Check if source file exists
-	if _, err := os.Stat(sourcePath); os.IsNotExist(err) {
-		// Create an empty puzzles file as fallback
+	// Try each possible source path
+	var data []byte
+	var readErr error
+	for _, sourcePath := range sourcePaths {
+		data, readErr = os.ReadFile(sourcePath)
+		if readErr == nil {
+			break // Successfully read the file
+		}
+	}
+
+	// If we couldn't find or read the source file, create an empty puzzle
+	if readErr != nil {
 		emptyPuzzles := []byte(`{"grid":[[0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0]]}`)
 		return os.WriteFile(defaultPuzzlesPath, emptyPuzzles, 0644)
 	}
 
-	// Read source file
-	data, err := os.ReadFile(sourcePath)
-	if err != nil {
-		return err
-	}
-
 	// Write to destination
 	return os.WriteFile(defaultPuzzlesPath, data, 0644)
+}
+
+// initLogDirectory sets up the log directory based on OS
+func initLogDirectory() {
+	if runtime.GOOS == "windows" {
+		// On Windows, use %TEMP%\godoku for logs
+		LogDir = filepath.Join(os.TempDir(), "godoku")
+	} else {
+		// On Linux/Unix systems, use /tmp/godoku
+		LogDir = filepath.Join("/tmp", "godoku")
+	}
+
+	// Create a unique log file for this session
+	timestamp := time.Now().Format("20060102-150405")
+	CurrentLogFile = filepath.Join(LogDir, "godoku-"+timestamp+".log")
+}
+
+// InitLogDirectory creates the log directory if it doesn't exist
+func InitLogDirectory() error {
+	if err := os.MkdirAll(LogDir, 0755); err != nil {
+		return err
+	}
+	return nil
+}
+
+// GetLogPath returns the path to the current log file
+func GetLogPath() string {
+	return CurrentLogFile
 }
 
 // GetPuzzlePath returns the path to a puzzle file

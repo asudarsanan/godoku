@@ -6,7 +6,8 @@ import (
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 	"godoku/config"
-	"log"
+	"godoku/logger"
+	"godoku/puzzle"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -29,13 +30,7 @@ type UI struct {
 	statusText    *tview.TextView
 }
 
-// GameState represents the state of a Sudoku game
-type GameState struct {
-	OriginalPuzzle [9][9]int   `json:"originalPuzzle"`
-	CurrentState   [9][9]int   `json:"currentState"`
-	UserEdited     [9][9]bool  `json:"userEdited"`
-	Timestamp      time.Time   `json:"timestamp"`
-}
+// Using puzzle.GameState for game state representation
 
 // NewUI creates a new game UI instance
 func NewUI(game [9][9]int) *UI {
@@ -110,17 +105,9 @@ func NewUI(game [9][9]int) *UI {
 
 // Run starts the game UI
 func (ui *UI) Run() error {
-	// Set up logging
-	logFile, err := os.OpenFile("app.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
-	if err != nil {
-		log.Fatalf("Failed to open log file: %s", err)
-	}
-	defer func(logFile *os.File) {
-		err := logFile.Close()
-		if err != nil {
-		}
-	}(logFile)
-	log.SetOutput(logFile)
+	// Set up logging - using project's logger package instead
+	// The logger is already initialized in main.go, so we don't need to initialize it here
+	logger.Info("Starting game UI")
 
 	ui.initGrid()
 	return ui.app.SetRoot(ui.mainContainer, true).EnableMouse(true).Run()
@@ -137,8 +124,9 @@ func (ui *UI) initGrid() {
 				text = fmt.Sprintf(" %d ", col)
 			}
 
+			// Determine cell color based on whether it's original or not
 			color := tcell.ColorYellowGreen
-			immutable := col != 0
+			immutable := col != 0 && !ui.userEdited[r][c]
 			if immutable {
 				color = tcell.ColorAqua
 			}
@@ -175,14 +163,14 @@ func (ui *UI) initGrid() {
 		
 		// Check if row and col are valid indices
 		if row < 0 || row >= 9 || col < 0 || col >= 9 {
-			log.Printf("Invalid cell selection (%d, %d)", row, col)
+			logger.Info("Invalid cell selection (%d, %d)", row, col)
 			return event
 		}
 		
 		cell := ui.table.GetCell(row, col)
 
 		if !ui.userEdited[row][col] && ui.game[row][col] != 0 {
-			log.Printf("The cell is non-editable (%d, %d)", row, col)
+			logger.Info("The cell is non-editable (%d, %d)", row, col)
 			return event
 		}
 
@@ -193,16 +181,16 @@ func (ui *UI) initGrid() {
 				newText := string(r)
 				cell.SetText(fmt.Sprintf(" %s ", newText)).SetTextColor(tcell.ColorRed)
 				ui.updateGrid(row, col, newText)
-				log.Printf("Updated cell (%d, %d) with new value: %s", row, col, newText)
+				logger.Info("Updated cell (%d, %d) with new value: %s", row, col, newText)
 			} else if r == '0' {
 				cell.SetText("   ").SetTextColor(tcell.Color20)
 				ui.updateGrid(row, col, "")
-				log.Printf("Cleared cell (%d, %d)", row, col)
+				logger.Info("Cleared cell (%d, %d)", row, col)
 			}
 		case tcell.KeyBackspace, tcell.KeyDelete:
 			cell.SetText("   ").SetTextColor(tcell.Color20)
 			ui.updateGrid(row, col, "")
-			log.Printf("Cleared cell (%d, %d)", row, col)
+			logger.Info("Cleared cell (%d, %d)", row, col)
 		}
 		return event
 	})
@@ -309,8 +297,8 @@ func (ui *UI) resetPuzzle() {
 					}
 				}
 				
-				log.Printf("Puzzle has been reset to its original state")
-				ui.showStatus("Puzzle reset successfully")
+				logger.Info("Puzzle has been reset to its original state")
+				ui.ShowStatus("Puzzle reset successfully")
 			}
 			
 			// Return to the main UI
@@ -329,8 +317,8 @@ func (ui *UI) savePuzzle() {
 	if _, err := os.Stat(savesDir); os.IsNotExist(err) {
 		err := os.MkdirAll(savesDir, 0755)
 		if err != nil {
-			log.Printf("Error creating saves directory: %v", err)
-			ui.showStatus("Error: Could not create saves directory")
+			logger.Error("Error creating saves directory: %v", err)
+			ui.ShowStatus("Error: Could not create saves directory")
 			return
 		}
 	}
@@ -341,7 +329,7 @@ func (ui *UI) savePuzzle() {
 		timestamp.Format("2006-01-02_15-04-05")))
 	
 	// Create game state
-	gameState := GameState{
+	gameState := puzzle.GameState{
 		OriginalPuzzle: ui.originalGame,
 		CurrentState:   ui.game,
 		UserEdited:     ui.userEdited,
@@ -351,21 +339,21 @@ func (ui *UI) savePuzzle() {
 	// Marshal to JSON
 	jsonData, err := json.MarshalIndent(gameState, "", "  ")
 	if err != nil {
-		log.Printf("Error marshalling game state: %v", err)
-		ui.showStatus("Error: Could not save game")
+		logger.Error("Error marshalling game state: %v", err)
+		ui.ShowStatus("Error: Could not save game")
 		return
 	}
 	
 	// Write to file
 	err = os.WriteFile(filename, jsonData, 0644)
 	if err != nil {
-		log.Printf("Error writing save file: %v", err)
-		ui.showStatus("Error: Could not write save file")
+		logger.Error("Error writing save file: %v", err)
+		ui.ShowStatus("Error: Could not write save file")
 		return
 	}
 	
-	log.Printf("Game saved to %s", filename)
-	ui.showStatus(fmt.Sprintf("Game saved to %s", filepath.Base(filename)))
+	logger.Info("Game saved to %s", filename)
+	ui.ShowStatus(fmt.Sprintf("Game saved to %s", filepath.Base(filename)))
 	ui.app.SetFocus(ui.table)
 }
 
@@ -374,15 +362,15 @@ func (ui *UI) loadPuzzle() {
 	// Check if saves directory exists
 	savesDir := config.SavesDir
 	if _, err := os.Stat(savesDir); os.IsNotExist(err) {
-		ui.showStatus("No saved games found")
+		ui.ShowStatus("No saved games found")
 		return
 	}
 	
 	// Read saved game files
 	files, err := os.ReadDir(savesDir)
 	if err != nil {
-		log.Printf("Error reading saves directory: %v", err)
-		ui.showStatus("Error reading saved games")
+		logger.Error("Error reading saves directory: %v", err)
+		ui.ShowStatus("Error reading saved games")
 		return
 	}
 	
@@ -395,7 +383,7 @@ func (ui *UI) loadPuzzle() {
 	}
 	
 	if len(saveFiles) == 0 {
-		ui.showStatus("No saved games found")
+		ui.ShowStatus("No saved games found")
 		return
 	}
 	
@@ -445,19 +433,19 @@ func (ui *UI) loadGameFromFile(filePath string) {
 	// Read file content
 	data, err := os.ReadFile(filePath)
 	if err != nil {
-		log.Printf("Error reading save file: %v", err)
-		ui.showStatus("Error reading save file")
+		logger.Error("Error reading save file: %v", err)
+		ui.ShowStatus("Error reading save file")
 		ui.app.SetRoot(ui.mainContainer, true)
 		ui.app.SetFocus(ui.table)
 		return
 	}
 	
 	// Unmarshal JSON
-	var gameState GameState
+	var gameState puzzle.GameState
 	err = json.Unmarshal(data, &gameState)
 	if err != nil {
-		log.Printf("Error parsing save file: %v", err)
-		ui.showStatus("Error parsing save file")
+		logger.Error("Error parsing save file: %v", err)
+		ui.ShowStatus("Error parsing save file")
 		ui.app.SetRoot(ui.mainContainer, true)
 		ui.app.SetFocus(ui.table)
 		return
@@ -474,8 +462,8 @@ func (ui *UI) loadGameFromFile(filePath string) {
 	ui.app.SetRoot(ui.mainContainer, true)
 	ui.app.SetFocus(ui.table)
 	
-	ui.showStatus("Game loaded successfully")
-	log.Printf("Game loaded from %s", filePath)
+	ui.ShowStatus("Game loaded successfully")
+	logger.Info("Game loaded from %s", filePath)
 }
 
 // refreshGrid updates the UI grid based on the current game state
@@ -491,10 +479,12 @@ func (ui *UI) refreshGrid() {
 				cell.SetText(fmt.Sprintf(" %d ", ui.game[r][c]))
 			}
 			
-			// Set colors based on whether cell is original or user-edited
+			// Set colors based on the original puzzle and user edits
 			origValue := ui.originalGame[r][c]
-			if origValue != 0 && ui.game[r][c] == origValue {
-				// Original cell
+			
+			// Original cell from the puzzle
+			if origValue != 0 && ui.game[r][c] == origValue && !ui.userEdited[r][c] {
+				// Original puzzle cell with unchanged value (fixed/immutable)
 				cell.SetTextColor(tcell.ColorAqua)
 				cell.SetSelectable(false)
 			} else if ui.userEdited[r][c] {
@@ -517,8 +507,17 @@ func (ui *UI) refreshGrid() {
 	}
 }
 
-// showStatus displays a status message and clears it after a delay
-func (ui *UI) showStatus(message string) {
+// Using ShowStatus method instead
+
+// SetGameState updates the game state with provided values
+func (ui *UI) SetGameState(gameState [9][9]int, userEdited [9][9]bool) {
+	ui.game = gameState
+	ui.userEdited = userEdited
+	ui.refreshGrid()
+}
+
+// ShowStatus displays a status message and clears it after a delay
+func (ui *UI) ShowStatus(message string) {
 	ui.statusText.SetText(message).SetTextColor(tcell.ColorYellow)
 	
 	// Schedule clearing the message after 3 seconds
