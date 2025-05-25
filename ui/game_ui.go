@@ -124,16 +124,24 @@ func (ui *UI) initGrid() {
 				text = fmt.Sprintf(" %d ", col)
 			}
 
-			// Determine cell color based on whether it's original or not
-			color := tcell.ColorYellowGreen
-			immutable := col != 0 && !ui.userEdited[r][c]
-			if immutable {
-				color = tcell.ColorAqua
+			// Set cell color based on whether it's an original puzzle cell or user-edited
+			color := tcell.ColorYellowGreen // Default for empty cells
+			immutable := false
+			
+			if col != 0 {
+				if ui.userEdited[r][c] {
+					// User edited cell
+					color = tcell.ColorRed
+				} else {
+					// Original puzzle cell
+					color = tcell.ColorAqua
+					immutable = true
+				}
 			}
+			
 			bgColor := tcell.ColorSilver
 			if (r == 3 || r == 4 || r == 5) || (c == 3 || c == 4 || c == 5) {
 				bgColor = tcell.ColorGray
-
 			}
 
 			ui.table.SetCell(r, c, tview.NewTableCell(text).
@@ -183,12 +191,12 @@ func (ui *UI) initGrid() {
 				ui.updateGrid(row, col, newText)
 				logger.Info("Updated cell (%d, %d) with new value: %s", row, col, newText)
 			} else if r == '0' {
-				cell.SetText("   ").SetTextColor(tcell.Color20)
+				cell.SetText("   ").SetTextColor(tcell.ColorYellowGreen) // Use consistent color
 				ui.updateGrid(row, col, "")
 				logger.Info("Cleared cell (%d, %d)", row, col)
 			}
 		case tcell.KeyBackspace, tcell.KeyDelete:
-			cell.SetText("   ").SetTextColor(tcell.Color20)
+			cell.SetText("   ").SetTextColor(tcell.ColorYellowGreen) // Use consistent color
 			ui.updateGrid(row, col, "")
 			logger.Info("Cleared cell (%d, %d)", row, col)
 		}
@@ -290,9 +298,10 @@ func (ui *UI) resetPuzzle() {
 						if ui.game[r][c] == 0 {
 							cell.SetText("   ").SetTextColor(tcell.ColorYellowGreen)
 						} else {
-							cell.SetText(fmt.Sprintf(" %d ", ui.game[r][c])).
-								SetTextColor(tcell.ColorAqua).
-								SetSelectable(false)
+							// After reset, all non-empty cells are original puzzle cells
+							cell.SetText(fmt.Sprintf(" %d ", ui.game[r][c]))
+							cell.SetTextColor(tcell.ColorAqua)
+							cell.SetSelectable(false)
 						}
 					}
 				}
@@ -479,23 +488,23 @@ func (ui *UI) refreshGrid() {
 				cell.SetText(fmt.Sprintf(" %d ", ui.game[r][c]))
 			}
 			
-			// Set colors based on the original puzzle and user edits
-			origValue := ui.originalGame[r][c]
+			// Set cell color based on whether it's an original puzzle cell or user-edited
+			color := tcell.ColorYellowGreen // Default for empty cells
+			isSelectable := true
 			
-			// Original cell from the puzzle
-			if origValue != 0 && ui.game[r][c] == origValue && !ui.userEdited[r][c] {
-				// Original puzzle cell with unchanged value (fixed/immutable)
-				cell.SetTextColor(tcell.ColorAqua)
-				cell.SetSelectable(false)
-			} else if ui.userEdited[r][c] {
-				// User edited cell
-				cell.SetTextColor(tcell.ColorRed)
-				cell.SetSelectable(true)
-			} else {
-				// Empty editable cell
-				cell.SetTextColor(tcell.ColorYellowGreen)
-				cell.SetSelectable(true)
+			if ui.game[r][c] != 0 {
+				if ui.userEdited[r][c] {
+					// User edited cell
+					color = tcell.ColorRed
+				} else {
+					// Original puzzle cell (not user-edited)
+					color = tcell.ColorAqua
+					isSelectable = false
+				}
 			}
+			
+			cell.SetTextColor(color)
+			cell.SetSelectable(isSelectable)
 			
 			// Set background color based on position
 			bgColor := tcell.ColorSilver
