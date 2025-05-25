@@ -23,6 +23,10 @@ type UI struct {
 	userEdited    [9][9]bool
 	mainContainer *tview.Flex
 	controlBar    *tview.Flex
+	menuBar       *tview.Flex
+	homeButton    *tview.Button
+	themeButton   *tview.Button
+	builderButton *tview.Button
 	resetButton   *tview.Button
 	saveButton    *tview.Button
 	loadButton    *tview.Button
@@ -51,6 +55,25 @@ func NewUI(game [9][9]int) *UI {
 		statusText:   tview.NewTextView().SetText("").SetTextAlign(tview.AlignCenter),
 	}
 	
+	// Create menu buttons
+	ui.homeButton = tview.NewButton("Home").
+		SetSelectedFunc(func() {
+			// TODO: Implement home functionality
+			ui.ShowStatus("Home functionality not yet implemented")
+		})
+	
+	ui.themeButton = tview.NewButton("Theme").
+		SetSelectedFunc(func() {
+			// TODO: Implement theme selection
+			ui.ShowStatus("Theme selection not yet implemented")
+		})
+	
+	ui.builderButton = tview.NewButton("Build").
+		SetSelectedFunc(func() {
+			// TODO: Implement puzzle builder
+			ui.ShowStatus("Puzzle builder not yet implemented")
+		})
+	
 	// Create control buttons
 	ui.resetButton = tview.NewButton("Reset").
 		SetSelectedFunc(func() {
@@ -67,7 +90,7 @@ func NewUI(game [9][9]int) *UI {
 			ui.loadPuzzle()
 		})
 	
-	ui.exitButton = tview.NewButton("Exit").
+	ui.exitButton = tview.NewButton("Quit").
 		SetSelectedFunc(func() {
 			ui.app.Stop()
 		})
@@ -80,14 +103,26 @@ func NewUI(game [9][9]int) *UI {
 		AddItem(ui.saveButton, 8, 0, true).
 		AddItem(nil, 1, 0, false).
 		AddItem(ui.loadButton, 8, 0, true).
+		AddItem(nil, 0, 1, false)
+	
+	// Create menu bar
+	ui.menuBar = tview.NewFlex().
+		AddItem(nil, 0, 1, false).
+		AddItem(ui.homeButton, 8, 0, true).
+		AddItem(nil, 1, 0, false).
+		AddItem(ui.themeButton, 8, 0, true).
+		AddItem(nil, 1, 0, false).
+		AddItem(ui.builderButton, 8, 0, true).
 		AddItem(nil, 1, 0, false).
 		AddItem(ui.exitButton, 8, 0, true).
 		AddItem(nil, 0, 1, false)
 	
-	// Create main container with puzzle grid and control bar
+	// Create main container with menu bar, puzzle grid and control bar
 	ui.mainContainer = tview.NewFlex().
 		SetDirection(tview.FlexRow).
 		AddItem(nil, 0, 1, false).
+		AddItem(ui.menuBar, 1, 0, true).     // Menu bar above puzzle grid
+		AddItem(nil, 1, 0, false).
 		AddItem(
 			tview.NewFlex().
 				AddItem(nil, 0, 1, false).
@@ -95,9 +130,9 @@ func NewUI(game [9][9]int) *UI {
 				AddItem(nil, 0, 1, false),
 			19, 0, true). // Height of puzzle grid
 		AddItem(nil, 1, 0, false).
-		AddItem(ui.statusText, 1, 0, false).
+		AddItem(ui.controlBar, 1, 0, true).  // Control bar below puzzle grid
 		AddItem(nil, 1, 0, false).
-		AddItem(ui.controlBar, 1, 0, true).
+		AddItem(ui.statusText, 1, 0, false).
 		AddItem(nil, 0, 1, false)
 	
 	return ui
@@ -161,9 +196,9 @@ func (ui *UI) initGrid() {
 	})
 
 	ui.table.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
-		// Add Tab key to switch focus between puzzle grid and control buttons
+		// Add Tab key to switch focus between puzzle grid and menu/control buttons
 		if event.Key() == tcell.KeyTab {
-			ui.app.SetFocus(ui.resetButton)
+			ui.app.SetFocus(ui.homeButton) // Focus on the first menu button
 			return nil
 		}
 	
@@ -206,15 +241,29 @@ func (ui *UI) initGrid() {
 	// Set up input capture for the main container to handle global key events
 	ui.mainContainer.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
 		if event.Key() == tcell.KeyTab {
-			// Cycle focus between the table and the buttons
-			if ui.app.GetFocus() == ui.table {
+			// Tab cycle navigation: Menu bar -> Table -> Control bar -> Menu bar
+			currentFocus := ui.app.GetFocus()
+			
+			// If focus is on menu buttons, go to table
+			if currentFocus == ui.homeButton || 
+			   currentFocus == ui.themeButton || 
+			   currentFocus == ui.builderButton ||
+			   currentFocus == ui.exitButton {
+				ui.app.SetFocus(ui.table)
+				return nil
+			}
+			
+			// If focus is on table, go to control bar
+			if currentFocus == ui.table {
 				ui.app.SetFocus(ui.resetButton)
 				return nil
-			} else if ui.app.GetFocus() == ui.resetButton || 
-				ui.app.GetFocus() == ui.saveButton || 
-				ui.app.GetFocus() == ui.loadButton || 
-				ui.app.GetFocus() == ui.exitButton {
-				ui.app.SetFocus(ui.table)
+			}
+			
+			// If focus is on control buttons, go to menu bar
+			if currentFocus == ui.resetButton || 
+			   currentFocus == ui.saveButton || 
+			   currentFocus == ui.loadButton {
+				ui.app.SetFocus(ui.homeButton)
 				return nil
 			}
 		}
@@ -245,16 +294,44 @@ func (ui *UI) initGrid() {
 		if event.Key() == tcell.KeyLeft {
 			ui.app.SetFocus(ui.saveButton)
 			return nil
-		} else if event.Key() == tcell.KeyRight {
-			ui.app.SetFocus(ui.exitButton)
-			return nil
 		}
 		return event
 	})
 
 	ui.exitButton.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
 		if event.Key() == tcell.KeyLeft {
-			ui.app.SetFocus(ui.loadButton)
+			ui.app.SetFocus(ui.builderButton)
+			return nil
+		}
+		return event
+	})
+	
+	// Set up navigation for menu buttons
+	ui.homeButton.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+		if event.Key() == tcell.KeyRight {
+			ui.app.SetFocus(ui.themeButton)
+			return nil
+		}
+		return event
+	})
+	
+	ui.themeButton.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+		if event.Key() == tcell.KeyLeft {
+			ui.app.SetFocus(ui.homeButton)
+			return nil
+		} else if event.Key() == tcell.KeyRight {
+			ui.app.SetFocus(ui.builderButton)
+			return nil
+		}
+		return event
+	})
+	
+	ui.builderButton.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+		if event.Key() == tcell.KeyLeft {
+			ui.app.SetFocus(ui.themeButton)
+			return nil
+		} else if event.Key() == tcell.KeyRight {
+			ui.app.SetFocus(ui.exitButton)
 			return nil
 		}
 		return event
