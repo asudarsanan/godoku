@@ -1,2 +1,76 @@
-.idea
+# Godoku application specific
+godoku
+resources
+saves
 app.log
+
+# Go specific
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+*.prof
+*.trace
+/vendor/
+
+# Build output
+/bin/
+/build/
+/dist/
+
+# Go workspace file
+go.work
+
+# Log files
+*.log
+
+# IDE specific files
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Environment variables
+.env
+.env.local
+
+# Binary files
+main
+
+# Go coverage files
+coverage.*
+*.cover
+
+# Debug files
+debug
+debug.test
+
+# Package specific temp files
+/tmp
+
+# MacOS specific
+.AppleDouble
+.LSOverride
+._*
+
+# Windows specific
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Linux specific
+*~
+
+# Test binary, built with `go test -c`
+*.test
+
+# Dependency directories
+vendor/
+
+# Crash log files
+crash.log

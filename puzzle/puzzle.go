@@ -2,15 +2,25 @@ package puzzle
 
 import (
 	"encoding/json"
+	"godoku/config"
 	"io"
 	"os"
+	"path/filepath"
 )
 
 func ImportPuzzle(filename string) ([9][9]int, error) {
 	var grid [9][9]int
 
+	// Determine file path - try config directory first, then fallback to resources
+	puzzlePath := config.GetPuzzlePath(filename)
+	
+	// If the config directory doesn't exist or file is not there, try resources directory
+	if _, err := os.Stat(puzzlePath); os.IsNotExist(err) {
+		puzzlePath = filepath.Join("resources", filename)
+	}
+
 	// Open the file
-	file, err := os.Open("resources/" + filename)
+	file, err := os.Open(puzzlePath)
 	if err != nil {
 		return grid, err
 	}
